@@ -1,5 +1,7 @@
 # Alienware-Power-Script
-Low level code / script made to optimize Alienware M16 for long battery life unplugged and maximum performance plugged in. Because without optimizations it only lasts 40 minutes and I have 3 hour classes with no outlets.
+Low level code / script made to optimize Alienware M16 for long battery life unplugged and maximum performance plugged in.
+
+Because without optimizations it only lasts 40 minutes and I have 3 hour classes with no outlets.
 
 It comes in the form of a file which you double click and it runs an IF statement, which works like so:
 
