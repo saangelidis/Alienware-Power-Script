@@ -3,7 +3,9 @@ Low level code / script made to optimize Alienware M16 for long battery life unp
 
 Because without optimizations it only lasts 40 minutes and I have 3 hour classes with no outlets.
 
-It comes in the form of a file which you double click and it runs an IF statement, which works like so:
+It comes in the form of two executable files.
+One of the files is a ghost game, that you must manually import into the AWCC and use to set the performance plan to Battery, as well as turn off all the keys. 
+
 
 If laptop is **not** plugged in:
 * Enable battery saver mode
@@ -16,3 +18,4 @@ If laptop is plugged in:
 * Disable battery saver mode
 * Maximize refresh rate
 * Turn on high performance power plan
+
