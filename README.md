@@ -23,7 +23,7 @@ When laptop is plugged in:
 
 # How to use:
 
-## Option 1 - install
+## Option 1 - Build your own .exe
 
 ### Step 1. Make the two files executables, then place them in the same directory, and run the AlienwarePowerScript.exe
 
@@ -39,7 +39,7 @@ on mingw64
 
 Keep AWCC open so that it can detect the ghost game!
 
-## Option 2 - Run the .exe
+## Option 2 - Run the existing .exe
 
 ### Step 1. Place the two .exe files in the same directory and run 'AlienwarePowerScript.exe'
 
