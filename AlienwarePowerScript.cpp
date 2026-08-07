@@ -4,18 +4,18 @@
 //  Watches AC/battery status on Windows and automatically applies a
 //  battery-friendly or performance profile:
 //
-//    UNPLUGGED  -> Energy Saver threshold forced on, RGB decoy-game launch,
-//                  refresh rate locked to 60Hz, brightness -> 0%
+//    UNPLUGGED  -> Energy Saver auto-engages from a pre-primed 100% DC threshold,
+//                  refresh rate locked to 60Hz, Energy Saver dims display to 0%
 //
 //    PLUGGED IN -> Energy Saver threshold restored, refresh rate maxed
 //
 //  A balloon notification is shown on every transition.
 //
 //  BUILD (MinGW-w64 / g++):
-//    g++ -O2 -municode -mwindows -o AlienwarePowerScript.exe AlienwarePowerScript.cpp -luser32 -lgdi32 -lole32 -loleaut32 -lwbemuuid -lshell32
+//    g++ -O2 -municode -mwindows -o AlienwarePowerScript.exe AlienwarePowerScript.cpp -luser32 -lgdi32 -lshell32
 //
 //  BUILD (MSVC "x64 Native Tools" prompt):
-//    cl /O2 /EHsc /DUNICODE /D_UNICODE AlienwarePowerScript.cpp /link user32.lib gdi32.lib ole32.lib oleaut32.lib wbemuuid.lib shell32.lib /SUBSYSTEM:WINDOWS
+//    cl /O2 /EHsc /DUNICODE /D_UNICODE AlienwarePowerScript.cpp /link user32.lib gdi32.lib shell32.lib /SUBSYSTEM:WINDOWS
 //
 //  NOTES:
 //    - Run once "as Administrator" the first time; some powercfg writes
@@ -30,17 +30,12 @@
 
 #include <windows.h>
 #include <powersetting.h>
-#include <wbemidl.h>
-#include <comdef.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <string>
 #include <vector>
 #include <cstdio>
 
-#pragma comment(lib, "wbemuuid.lib")
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "shell32.lib")
 
 // ---------------------------------------------------------------------------
@@ -69,9 +64,9 @@ static bool  g_lastOnAC = true;
 // ---------------------------------------------------------------------------
 void ApplyBatteryMode();
 void ApplyPerformanceMode();
+bool PrimeEnergySaverForBattery();
 void ShowToast(const std::wstring& title, const std::wstring& msg);
 void SetRefreshRate(bool maxOut, int fallbackHz);
-bool SetBrightnessWMI(BYTE percent);
 void LaunchBatteryGame();
 void KillBatteryGame();
 bool RunPowercfg(const std::wstring& args);
@@ -101,10 +96,16 @@ bool RunPowercfg(const std::wstring& args)
 
     if (!ok) return false;
 
-    WaitForSingleObject(pi.hProcess, 5000);
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, 5000);
+    DWORD exitCode = 1;
+
+    if (waitResult == WAIT_OBJECT_0)
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-    return true;
+
+    return (waitResult == WAIT_OBJECT_0 && exitCode == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,93 +151,6 @@ void SetRefreshRate(bool maxOut, int fallbackHz)
     dmSet.dmFields = DM_DISPLAYFREQUENCY;
 
     ChangeDisplaySettingsExW(nullptr, &dmSet, nullptr, CDS_UPDATEREGISTRY, nullptr);
-}
-
-// ---------------------------------------------------------------------------
-// Brightness via WMI (root\WMI, WmiMonitorBrightnessMethods::WmiSetBrightness)
-// Works for most internal laptop panels on a driver that exposes the
-// standard ACPI brightness interface. Some vendor GPU/driver combos ignore it.
-// ---------------------------------------------------------------------------
-bool SetBrightnessWMI(BYTE percent)
-{
-    bool comInitializedHere = false;
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (hr == S_OK) comInitializedHere = true;
-    else if (hr != S_FALSE && hr != RPC_E_CHANGED_MODE)
-        return false;
-
-    bool success = false;
-    IWbemLocator* pLoc = nullptr;
-    IWbemServices* pSvc = nullptr;
-    IEnumWbemClassObject* pEnum = nullptr;
-
-    hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
-                           IID_IWbemLocator, (LPVOID*)&pLoc);
-    if (FAILED(hr)) goto cleanup;
-
-    hr = pLoc->ConnectServer(_bstr_t(L"ROOT\\WMI"), nullptr, nullptr, nullptr,
-                              0, nullptr, nullptr, &pSvc);
-    if (FAILED(hr)) goto cleanup;
-
-    hr = CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr,
-                            RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
-                            nullptr, EOAC_NONE);
-    if (FAILED(hr)) goto cleanup;
-
-    hr = pSvc->CreateInstanceEnum(_bstr_t(L"WmiMonitorBrightnessMethods"),
-                                   WBEM_FLAG_FORWARD_ONLY, nullptr, &pEnum);
-    if (FAILED(hr)) goto cleanup;
-
-    {
-        IWbemClassObject* pInst = nullptr;
-        ULONG returned = 0;
-        while (pEnum->Next(WBEM_INFINITE, 1, &pInst, &returned) == S_OK && returned)
-        {
-            VARIANT vPath;
-            VariantInit(&vPath);
-            pInst->Get(L"__PATH", 0, &vPath, nullptr, nullptr);
-
-            IWbemClassObject* pClass = nullptr;
-            IWbemClassObject* pInParamsDef = nullptr;
-            IWbemClassObject* pInParams = nullptr;
-
-            if (SUCCEEDED(pSvc->GetObject(_bstr_t(L"WmiMonitorBrightnessMethods"), 0, nullptr, &pClass, nullptr)) &&
-                SUCCEEDED(pClass->GetMethod(L"WmiSetBrightness", 0, &pInParamsDef, nullptr)) &&
-                SUCCEEDED(pInParamsDef->SpawnInstance(0, &pInParams)))
-            {
-                VARIANT vTimeout, vBrightness;
-                VariantInit(&vTimeout);
-                VariantInit(&vBrightness);
-                vTimeout.vt = VT_UI4;      vTimeout.ulVal = 0;
-                vBrightness.vt = VT_UI1;   vBrightness.bVal = percent;
-
-                pInParams->Put(L"Timeout", 0, &vTimeout, 0);
-                pInParams->Put(L"Brightness", 0, &vBrightness, 0);
-
-                IWbemClassObject* pOutParams = nullptr;
-                hr = pSvc->ExecMethod(vPath.bstrVal, _bstr_t(L"WmiSetBrightness"),
-                                       0, nullptr, pInParams, &pOutParams, nullptr);
-                if (SUCCEEDED(hr)) success = true;
-
-                if (pOutParams) pOutParams->Release();
-                VariantClear(&vTimeout);
-                VariantClear(&vBrightness);
-            }
-
-            if (pInParams) pInParams->Release();
-            if (pInParamsDef) pInParamsDef->Release();
-            if (pClass) pClass->Release();
-            VariantClear(&vPath);
-            pInst->Release();
-        }
-    }
-
-cleanup:
-    if (pEnum) pEnum->Release();
-    if (pSvc) pSvc->Release();
-    if (pLoc) pLoc->Release();
-    if (comInitializedHere) CoUninitialize();
-    return success;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,26 +258,43 @@ void KillBatteryGame()
 }
 
 // ---------------------------------------------------------------------------
-// Windows "Energy Saver" (formerly "Battery Saver") via the documented
-// automatic battery-threshold setting. Setting the DC threshold to 100%
-// makes Energy Saver engage as soon as the machine is running on battery.
-// When AC returns, the normal 50% automatic threshold is restored.
+// Windows Energy Saver automatic battery threshold.
+//
+// IMPORTANT: prime the DC threshold BEFORE the AC -> battery transition.
+// Windows can evaluate the already-configured DC value as the machine
+// switches to battery. Rewriting the threshold only after unplugging may be
+// too late to make Energy Saver engage on that same transition.
+//
+// These are Microsoft's documented GUIDs:
+//   SUB_ENERGYSAVER = de830923-a562-41af-a086-e3a2c6bad2da
+//   ESBATTTHRESHOLD = e69653ca-cf7f-4f05-aa73-cb833fa90ad4
+//   ESBRIGHTNESS    = 13d09884-f74e-474a-a852-b6bde8ad03a8
+//
+// This modifies only the DC/on-battery value. We intentionally DO NOT
+// restore it to 50% when AC returns.
 // ---------------------------------------------------------------------------
-void ForceEnergySaverOn()
+bool PrimeEnergySaverForBattery()
 {
-    // 100% means Energy Saver is eligible immediately whenever we're on DC.
-    RunPowercfg(L"/setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 100");
+    // Turn Energy Saver on immediately whenever the machine is on battery.
+    bool ok = RunPowercfg(
+        L"/setdcvalueindex SCHEME_CURRENT "
+        L"de830923-a562-41af-a086-e3a2c6bad2da "
+        L"e69653ca-cf7f-4f05-aa73-cb833fa90ad4 100");
 
-    // Re-apply the current scheme so Windows immediately picks up the new value.
-    // This does NOT switch to a different power plan.
-    RunPowercfg(L"/setactive SCHEME_CURRENT");
-}
+    // Energy Saver brightness scaling.
+    // 0 = maximum dimming. Change the final 0 to 50 for a milder 50% level.
+    if (ok)
+        ok = RunPowercfg(
+            L"/setdcvalueindex SCHEME_CURRENT "
+            L"de830923-a562-41af-a086-e3a2c6bad2da "
+            L"13d09884-f74e-474a-a852-b6bde8ad03a8 0");
 
-void RestoreEnergySaverDefault()
-{
-    // Restore the user's normal automatic Energy Saver threshold on AC.
-    RunPowercfg(L"/setdcvalueindex SCHEME_CURRENT SUB_ENERGYSAVER ESBATTTHRESHOLD 50");
-    RunPowercfg(L"/setactive SCHEME_CURRENT");
+    // Re-apply the CURRENT scheme so Windows picks up both settings.
+    // This does not switch to or create another power plan.
+    if (ok)
+        ok = RunPowercfg(L"/setactive SCHEME_CURRENT");
+
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,19 +302,26 @@ void RestoreEnergySaverDefault()
 // ---------------------------------------------------------------------------
 void ApplyBatteryMode()
 {
-    ForceEnergySaverOn();
     LaunchBatteryGame();   // triggers AWCC's "no color" profile for this decoy game
     SetRefreshRate(/*maxOut=*/false, /*fallbackHz=*/60);
-    SetBrightnessWMI(0);
 
     ShowToast(L"Alienware Power Script", L"Laptop unplugged -- Battery mode initiated");
 }
 
 void ApplyPerformanceMode()
 {
-    RestoreEnergySaverDefault();
     KillBatteryGame();     // AWCC reverts to your normal/default lighting profile
     SetRefreshRate(/*maxOut=*/true, /*fallbackHz=*/60);
+
+    // Restore the normal AC display brightness level to 100%.
+    // VIDEONORMALLEVEL is Windows' documented "Display brightness level".
+    RunPowercfg(
+        L"/setacvalueindex SCHEME_CURRENT "
+        L"SUB_VIDEO "
+        L"VIDEONORMALLEVEL 100");
+
+    // Re-apply the current scheme so the new AC brightness takes effect now.
+    RunPowercfg(L"/setactive SCHEME_CURRENT");
 
     ShowToast(L"Alienware Power Script", L"Laptop plugged in -- Performance mode initiated");
 }
@@ -516,6 +454,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
     if (!g_hwnd) return 1;
 
     CreateTrayIcon(g_hwnd);
+
+    // Prime Energy Saver's ON-BATTERY threshold while AC may still be present,
+    // so Windows sees 100% when the next unplug transition occurs.
+    if (!PrimeEnergySaverForBattery())
+    {
+        ShowToast(
+            L"Alienware Power Script",
+            L"Could not set Energy Saver threshold to 100%. Try running as Administrator.");
+    }
 
     // Subscribe to fine-grained AC/DC power source change notifications.
     RegisterPowerSettingNotification(g_hwnd, &GUID_ACDC_POWER_SOURCE,
