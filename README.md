@@ -4,18 +4,32 @@ Low level code / script made to optimize Alienware M16 for long battery life unp
 Because without optimizations it only lasts 40 minutes and I have 3 hour classes with no outlets.
 
 It comes in the form of two executable files.
-One of the files is a ghost game, that you must manually import into the AWCC and use to set the performance plan to Battery, as well as turn off all the keys. 
+One of the files is a "ghost game", that we use to trick the AWCC into setting the performance plan to Battery, as well as turn off all the keyboard lights. 
 
+As of the moment, the two files should be able to do the following.
 
-If laptop is **not** plugged in:
-* Enable battery saver mode
-* Disable RGB keys
+When laptop is **not** plugged in:
 * Lock refresh rate to 60 Hz
-* Turn brightness to 50%
-* Switch to balanced power plan
+* Minimize brightness
+* Switch to the Alienware battery plan
+* Disable RGB keys
+* Enable energy saver
 
-If laptop is plugged in:
-* Disable battery saver mode
-* Maximize refresh rate
-* Turn on high performance power plan
+When laptop is plugged in:
+* Maximize refresh rate (240 Hz)
+* Maximize brightness
+* Switch to whatever Alienware plan you use regularly
+* Disable energy saver
 
+## How to use:
+
+Make the two files executables, then place them in the same directory, and run the AlienwarePowerScript.exe
+
+on mingw64
+* g++ -O2 -municode -mwindows -o AlienwarePowerScript.exe AlienwarePowerScript.cpp -lpowrprof -luser32 -lgdi32 -lole32 -loleaut32 -lwbemuuid -lshell32
+* g++ -O2 -municode -mwindows -o AlienwareBatteryGame.exe AlienwareBatteryGame.cpp      
+
+If it's your first time running it, run as **administrator** so that the powercfg commands can execute, and don't forget to configure your ghost game!
+First, add the game from AWCC, then configure it to use the Battery plan, then turn off the key lights as well.
+
+Keep AWCC open so that it can detect the ghost game!
