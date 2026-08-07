@@ -21,15 +21,26 @@ When laptop is plugged in:
 * Switch to whatever Alienware plan you use regularly
 * Disable energy saver
 
-## How to use:
+# How to use:
 
-Make the two files executables, then place them in the same directory, and run the AlienwarePowerScript.exe
+## Option 1 - install
+
+### Step 1. Make the two files executables, then place them in the same directory, and run the AlienwarePowerScript.exe
 
 on mingw64
 * g++ -O2 -municode -mwindows -o AlienwarePowerScript.exe AlienwarePowerScript.cpp -lpowrprof -luser32 -lgdi32 -lole32 -loleaut32 -lwbemuuid -lshell32
 * g++ -O2 -municode -mwindows -o AlienwareBatteryGame.exe AlienwareBatteryGame.cpp      
 
-If it's your first time running it, run as **administrator** so that the powercfg commands can execute, and don't forget to configure your ghost game!
-First, add the game from AWCC, then configure it to use the Battery plan, then turn off the key lights as well.
+### Step 2. If it's your first time running it, run as **administrator** so that the powercfg commands can execute, and don't forget to configure your ghost game!
+
+* First, add the game from AWCC
+* then configure it to use the Battery plan
+* then turn off the key lights as well.
 
 Keep AWCC open so that it can detect the ghost game!
+
+## Option 2 - Run the .exe
+
+### Step 1. Place the two .exe files in the same directory and run 'AlienwarePowerScript.exe'
+
+Follow Option 1 Step 2 from there.
